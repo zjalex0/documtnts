@@ -1,188 +1,111 @@
-asyncapi: '2.6.0'
+openapi: 3.0.0
+
 info:
-  title: Streetlights Kafka API
-  version: '1.0.0'
+  title: Notifications Dynamic API
   description: |
-    The Smartylighting Streetlights API allows you to remotely manage the city lights.
+    API encargada de gestionar el **envío de notificaciones dinámicas** a clientes.
 
-    ### Check out its awesome features:
+    Esta API permite:
 
-    * Turn a specific streetlight on/off 🌃
-    * Dim a specific streetlight 😎
-    * Receive real-time information about environmental lighting conditions 📈
-  license:
-    name: Apache 2.0
-    url: https://www.apache.org/licenses/LICENSE-2.0
+    - Crear campañas de notificación
+    - Consultar el estado de las notificaciones
+    - Obtener detalles del flujo de mensajería
+    - Gestionar reintentos de envío
+
+    ## Flujo general
+
+    1. Se crea una campaña de notificación.
+    2. Se registran los destinos (clientes).
+    3. El sistema envía las notificaciones.
+    4. Se puede consultar el estado de cada envío.
+
+  version: 1.0.0
+  contact:
+    name: Equipo de Integraciones
+    email: soporte@empresa.com
 
 servers:
-  scram-connections:
-    url: test.mykafkacluster.org:18092
-    protocol: kafka-secure
-    description: Test broker secured with scramSha256
-    security:
-      - saslScram: []
-    tags:
-      - name: "env:test-scram"
-        description: "This environment is meant for running internal tests through scramSha256"
-      - name: "kind:remote"
-        description: "This server is a remote server. Not exposed by the application"
-      - name: "visibility:private"
-        description: "This resource is private and only available to certain users"
-  mtls-connections:
-    url: test.mykafkacluster.org:28092
-    protocol: kafka-secure
-    description: Test broker secured with X509
-    security:
-      - certs: []
-    tags:
-      - name: "env:test-mtls"
-        description: "This environment is meant for running internal tests through mtls"
-      - name: "kind:remote"
-        description: "This server is a remote server. Not exposed by the application"
-      - name: "visibility:private"
-        description: "This resource is private and only available to certain users"
+  - url: https://api.empresa.com/v1
+    description: Producción
 
-defaultContentType: application/json
+  - url: https://sandbox.empresa.com/v1
+    description: Sandbox
 
-channels:
-  smartylighting.streetlights.1.0.event.{streetlightId}.lighting.measured:
-    description: The topic on which measured values may be produced and consumed.
-    parameters:
-      streetlightId:
-        $ref: '#/components/parameters/streetlightId'
-    publish:
-      summary: Inform about environmental lighting conditions of a particular streetlight.
-      operationId: receiveLightMeasurement
-      traits:
-        - $ref: '#/components/operationTraits/kafka'
-      message:
-        $ref: '#/components/messages/lightMeasured'
+tags:
+  - name: Notifications
+    description: Operaciones relacionadas con notificaciones dinámicas
 
-  smartylighting.streetlights.1.0.action.{streetlightId}.turn.on:
-    parameters:
-      streetlightId:
-        $ref: '#/components/parameters/streetlightId'
-    subscribe:
-      operationId: turnOn
-      traits:
-        - $ref: '#/components/operationTraits/kafka'
-      message:
-        $ref: '#/components/messages/turnOnOff'
+paths:
 
-  smartylighting.streetlights.1.0.action.{streetlightId}.turn.off:
-    parameters:
-      streetlightId:
-        $ref: '#/components/parameters/streetlightId'
-    subscribe:
-      operationId: turnOff
-      traits:
-        - $ref: '#/components/operationTraits/kafka'
-      message:
-        $ref: '#/components/messages/turnOnOff'
+  /notifications:
+    post:
+      tags:
+        - Notifications
+      summary: Crear campaña de notificaciones
+      description: |
+        Permite registrar una **campaña de notificaciones dinámicas**.
 
-  smartylighting.streetlights.1.0.action.{streetlightId}.dim:
-    parameters:
-      streetlightId:
-        $ref: '#/components/parameters/streetlightId'
-    subscribe:
-      operationId: dimLight
-      traits:
-        - $ref: '#/components/operationTraits/kafka'
-      message:
-        $ref: '#/components/messages/dimLight'
+        La campaña incluirá una lista de destinatarios y los datos necesarios
+        para iniciar el flujo de notificación.
 
-components:
-  messages:
-    lightMeasured:
-      name: lightMeasured
-      title: Light measured
-      summary: Inform about environmental lighting conditions of a particular streetlight.
-      contentType: application/json
-      traits:
-        - $ref: '#/components/messageTraits/commonHeaders'
-      payload:
-        $ref: "#/components/schemas/lightMeasuredPayload"
-    turnOnOff:
-      name: turnOnOff
-      title: Turn on/off
-      summary: Command a particular streetlight to turn the lights on or off.
-      traits:
-        - $ref: '#/components/messageTraits/commonHeaders'
-      payload:
-        $ref: "#/components/schemas/turnOnOffPayload"
-    dimLight:
-      name: dimLight
-      title: Dim light
-      summary: Command a particular streetlight to dim the lights.
-      traits:
-        - $ref: '#/components/messageTraits/commonHeaders'
-      payload:
-        $ref: "#/components/schemas/dimLightPayload"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              campaignId: CAMPAIGN001
+              schedulerDate: "2026-03-13T10:00:00"
+              frecuencyResends: 3
+              periodResends: 24
+              destinations:
+                - destination: "3001234567"
+                  clientIdentification: "123456"
+                  clientCode: "CLI001"
+                  email: "cliente@email.com"
 
-  schemas:
-    lightMeasuredPayload:
-      type: object
-      properties:
-        lumens:
-          type: integer
-          minimum: 0
-          description: Light intensity measured in lumens.
-        sentAt:
-          $ref: "#/components/schemas/sentAt"
-    turnOnOffPayload:
-      type: object
-      properties:
-        command:
-          type: string
-          enum:
-            - on
-            - off
-          description: Whether to turn on or off the light.
-        sentAt:
-          $ref: "#/components/schemas/sentAt"
-    dimLightPayload:
-      type: object
-      properties:
-        percentage:
-          type: integer
-          description: Percentage to which the light should be dimmed to.
-          minimum: 0
-          maximum: 100
-        sentAt:
-          $ref: "#/components/schemas/sentAt"
-    sentAt:
-      type: string
-      format: date-time
-      description: Date and time when the message was sent.
+      responses:
 
-  securitySchemes:
-    saslScram:
-      type: scramSha256
-      description: Provide your username and password for SASL/SCRAM authentication
-    certs:
-      type: X509
-      description: Download the certificate files from service provider
+        '200':
+          description: Campaña registrada correctamente
+          content:
+            application/json:
+              example:
+                status: success
+                message: Campaign created successfully
+                data:
+                  campaignId: CAMPAIGN001
 
-  parameters:
-    streetlightId:
-      description: The ID of the streetlight.
-      schema:
-        type: string
+        '400':
+          description: Error en la solicitud
 
-  messageTraits:
-    commonHeaders:
-      headers:
-        type: object
-        properties:
-          my-app-header:
-            type: integer
-            minimum: 0
-            maximum: 100
+        '500':
+          description: Error interno del servidor
 
-  operationTraits:
-    kafka:
-      bindings:
-        kafka:
-          clientId:
+  /notifications/{campaignId}:
+    get:
+      tags:
+        - Notifications
+      summary: Consultar estado de campaña
+      description: |
+        Permite obtener el estado de una campaña de notificaciones
+        junto con los detalles de cada destinatario.
+
+      parameters:
+        - name: campaignId
+          in: path
+          required: true
+          schema:
             type: string
-            enum: ['my-app-id']
+          description: Identificador de la campaña
+
+      responses:
+        '200':
+          description: Información de la campaña
+          content:
+            application/json:
+              example:
+                campaignId: CAMPAIGN001
+                status: COMPLETED
+                destinations:
+                  - destination: "3001234567"
+                    status: SENT
