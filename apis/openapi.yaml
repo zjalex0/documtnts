@@ -1,188 +1,182 @@
-asyncapi: '2.6.0'
+asyncapi: 2.6.0
 info:
-  title: Streetlights Kafka API
-  version: '1.0.0'
+  title: Notification Massive API
+  version: 1.0.0
   description: |
-    The Smartylighting Streetlights API allows you to remotely manage the city lights.
-
-    ### Check out its awesome features:
-
-    * Turn a specific streetlight on/off 🌃
-    * Dim a specific streetlight 😎
-    * Receive real-time information about environmental lighting conditions 📈
-  license:
-    name: Apache 2.0
-    url: https://www.apache.org/licenses/LICENSE-2.0
+    API para gestionar campañas de notificaciones masivas y consultar el estado de las notificaciones enviadas.
 
 servers:
-  scram-connections:
-    url: test.mykafkacluster.org:18092
-    protocol: kafka-secure
-    description: Test broker secured with scramSha256
-    security:
-      - saslScram: []
-    tags:
-      - name: "env:test-scram"
-        description: "This environment is meant for running internal tests through scramSha256"
-      - name: "kind:remote"
-        description: "This server is a remote server. Not exposed by the application"
-      - name: "visibility:private"
-        description: "This resource is private and only available to certain users"
-  mtls-connections:
-    url: test.mykafkacluster.org:28092
-    protocol: kafka-secure
-    description: Test broker secured with X509
-    security:
-      - certs: []
-    tags:
-      - name: "env:test-mtls"
-        description: "This environment is meant for running internal tests through mtls"
-      - name: "kind:remote"
-        description: "This server is a remote server. Not exposed by the application"
-      - name: "visibility:private"
-        description: "This resource is private and only available to certain users"
-
-defaultContentType: application/json
+  production:
+    url: https://tigo.com.co
+    protocol: https
+    description: Servidor productivo
 
 channels:
-  smartylighting.streetlights.1.0.event.{streetlightId}.lighting.measured:
-    description: The topic on which measured values may be produced and consumed.
-    parameters:
-      streetlightId:
-        $ref: '#/components/parameters/streetlightId'
+
+  /api/outbound/colombia/outboundmassive:
+    description: Servicio para programar envíos masivos de notificaciones
     publish:
-      summary: Inform about environmental lighting conditions of a particular streetlight.
-      operationId: receiveLightMeasurement
-      traits:
-        - $ref: '#/components/operationTraits/kafka'
+      summary: Programar campaña de notificaciones
+      operationId: scheduleMassiveNotification
+      bindings:
+        http:
+          type: request
+          method: POST
+          headers:
+            type: object
+            properties:
+              x-access-key:
+                type: string
+                example: S7uK238FXIbHdaghd0LuT2ZfdA
       message:
-        $ref: '#/components/messages/lightMeasured'
+        $ref: '#/components/messages/OutboundMassiveRequest'
 
-  smartylighting.streetlights.1.0.action.{streetlightId}.turn.on:
-    parameters:
-      streetlightId:
-        $ref: '#/components/parameters/streetlightId'
+  /api/colombia/getreportnotificationmassive:
+    description: Obtener reporte de campañas y estado de notificaciones
     subscribe:
-      operationId: turnOn
-      traits:
-        - $ref: '#/components/operationTraits/kafka'
+      summary: Consultar estado de campaña
+      operationId: getReportNotificationMassive
+      bindings:
+        http:
+          type: request
+          method: GET
+          headers:
+            type: object
+            properties:
+              x-access-key:
+                type: string
+                example: S7uK238FXIbHdaghd0LuT2ZfdAS
       message:
-        $ref: '#/components/messages/turnOnOff'
-
-  smartylighting.streetlights.1.0.action.{streetlightId}.turn.off:
-    parameters:
-      streetlightId:
-        $ref: '#/components/parameters/streetlightId'
-    subscribe:
-      operationId: turnOff
-      traits:
-        - $ref: '#/components/operationTraits/kafka'
-      message:
-        $ref: '#/components/messages/turnOnOff'
-
-  smartylighting.streetlights.1.0.action.{streetlightId}.dim:
-    parameters:
-      streetlightId:
-        $ref: '#/components/parameters/streetlightId'
-    subscribe:
-      operationId: dimLight
-      traits:
-        - $ref: '#/components/operationTraits/kafka'
-      message:
-        $ref: '#/components/messages/dimLight'
+        $ref: '#/components/messages/GetReportNotificationRequest'
 
 components:
+
   messages:
-    lightMeasured:
-      name: lightMeasured
-      title: Light measured
-      summary: Inform about environmental lighting conditions of a particular streetlight.
-      contentType: application/json
-      traits:
-        - $ref: '#/components/messageTraits/commonHeaders'
+
+    OutboundMassiveRequest:
+      name: OutboundMassiveRequest
+      title: Programación de campaña masiva
       payload:
-        $ref: "#/components/schemas/lightMeasuredPayload"
-    turnOnOff:
-      name: turnOnOff
-      title: Turn on/off
-      summary: Command a particular streetlight to turn the lights on or off.
-      traits:
-        - $ref: '#/components/messageTraits/commonHeaders'
-      payload:
-        $ref: "#/components/schemas/turnOnOffPayload"
-    dimLight:
-      name: dimLight
-      title: Dim light
-      summary: Command a particular streetlight to dim the lights.
-      traits:
-        - $ref: '#/components/messageTraits/commonHeaders'
-      payload:
-        $ref: "#/components/schemas/dimLightPayload"
-
-  schemas:
-    lightMeasuredPayload:
-      type: object
-      properties:
-        lumens:
-          type: integer
-          minimum: 0
-          description: Light intensity measured in lumens.
-        sentAt:
-          $ref: "#/components/schemas/sentAt"
-    turnOnOffPayload:
-      type: object
-      properties:
-        command:
-          type: string
-          enum:
-            - on
-            - off
-          description: Whether to turn on or off the light.
-        sentAt:
-          $ref: "#/components/schemas/sentAt"
-    dimLightPayload:
-      type: object
-      properties:
-        percentage:
-          type: integer
-          description: Percentage to which the light should be dimmed to.
-          minimum: 0
-          maximum: 100
-        sentAt:
-          $ref: "#/components/schemas/sentAt"
-    sentAt:
-      type: string
-      format: date-time
-      description: Date and time when the message was sent.
-
-  securitySchemes:
-    saslScram:
-      type: scramSha256
-      description: Provide your username and password for SASL/SCRAM authentication
-    certs:
-      type: X509
-      description: Download the certificate files from service provider
-
-  parameters:
-    streetlightId:
-      description: The ID of the streetlight.
-      schema:
-        type: string
-
-  messageTraits:
-    commonHeaders:
-      headers:
         type: object
         properties:
-          my-app-header:
-            type: integer
-            minimum: 0
-            maximum: 100
-
-  operationTraits:
-    kafka:
-      bindings:
-        kafka:
-          clientId:
+          campaignId:
             type: string
-            enum: ['my-app-id']
+            description: Id de la campaña
+            example: "5865"
+
+          schedulerDate:
+            type: string
+            description: Fecha programada de envío
+            example: "2025-06-20 10:30:00"
+
+          template:
+            type: string
+            description: Nombre de la plantilla
+            example: descuentos
+
+          resendPolicies:
+            $ref: '#/components/schemas/ResendPolicies'
+
+          destinations:
+            type: array
+            items:
+              $ref: '#/components/schemas/Destination'
+
+    GetReportNotificationRequest:
+      name: GetReportNotificationRequest
+      title: Consulta de reporte de notificaciones
+      payload:
+        type: object
+        properties:
+          campaignId:
+            type: string
+            description: Id de la campaña
+            example: "3565"
+
+          startDate:
+            type: string
+            description: Fecha inicio filtro
+            example: "2025-06-01 07:00:00"
+
+          endDate:
+            type: string
+            description: Fecha fin filtro
+            example: "2025-06-30 18:00:00"
+
+  schemas:
+
+    ResendPolicies:
+      type: object
+      properties:
+        frecuencyResends:
+          type: integer
+          description: Máximo de reenvíos por destinatario
+          example: 3
+
+        periodResends:
+          type: integer
+          description: Intervalo de reenvío en horas
+          example: 48
+
+        response:
+          type: array
+          description: Estados que activan reenvío
+          items:
+            type: string
+            enum:
+              - un_read
+              - un_response
+              - no_complete
+
+    Destination:
+      type: object
+      properties:
+
+        destination:
+          type: string
+          description: Celular del destinatario con indicativo
+          example: "57304544553"
+
+        clientIdentification:
+          type: string
+          description: Documento del cliente
+          example: "73557001"
+
+        clientCode:
+          type: string
+          description: Código del cliente
+          example: "0001001832"
+
+        addresCode:
+          type: string
+          description: Código de dirección
+          example: "0002300479"
+
+        email:
+          type: string
+          description: Correo de notificación
+          example: test@gmail.com
+
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/Product'
+
+        parameters:
+          type: array
+          items:
+            type: string
+          example:
+            - "blanco 42 Kilos"
+            - "9%"
+
+    Product:
+      type: object
+      properties:
+        productCode:
+          type: string
+          example: "4618089"
+
+        ammount:
+          type: integer
+          example: 8
