@@ -1,132 +1,357 @@
-asyncapi: 2.6.0
+openapi: 3.0.3
+
 info:
-  title: Notification Massive API
-  version: 1.0.0
+  title: Argos HSM Massive Notifications API
+  version: 1.1.0
   description: |
-    API para gestionar campañas de notificaciones masivas y consultar el estado de las notificaciones enviadas.
+    APIs para consultar, programar y reenviar HSM de forma masiva por las diferentes campañas y líneas de WhatsApp de Argos.
+
+ 
+    ## Flujo del proceso
+
+    1. **Registro de programación**
+       - El cliente registra una campaña de notificaciones indicando:
+         - Identificador de campaña.
+         - Número de la línea.
+         - Código de la línea generado por Chattigo
+         - Fecha y hora de programación del envío.
+         - Plantilla HSM que se utilizará.
+         - Lista de destinatarios.
+         - Parámetros de personalización de la plantilla.
+         - Políticas de reenvío configuradas por el cliente (frecuencia e intervalo).
+
+    2. **Almacenamiento de la campaña**
+       - El sistema valida la información recibida.
+       - Se guarda la programación de la campaña junto con sus destinatarios y políticas de reenvío.
+
+    3. **Ejecución del proceso programado**
+       - Un proceso automático del sistema se ejecuta cada **5 minutos**.
+       - Este proceso identifica las notificaciones programadas que deben enviarse según la fecha y hora configurada.
+
+    4. **Envío de notificaciones**
+       - El sistema envía el mensaje HSM correspondiente a cada destinatario de la campaña.
+       - Cada envío queda registrado con su estado inicial.
+
+    5. **Evaluación de reenvíos**
+       - El sistema evalúa el estado de cada notificación enviada.
+       - Si el destinatario cumple las condiciones definidas en las políticas de reenvío (por ejemplo):
+         - mensaje no leído,
+         - mensaje leído sin respuesta,
+         - flujo iniciado pero no completado,
+       - el sistema programará un nuevo envío según:
+         - el intervalo definido en horas
+         - el número máximo de reintentos permitido.
+
+    6. **Finalización del flujo**
+       - Si el usuario interactúa con la notificación y completa el flujo (por ejemplo, acepta o rechaza la campaña):
+         - el sistema marca el flujo como completado.
+         - se detienen automáticamente los reenvíos programados para ese destinatario.
+
+    7. **Cierre automático por políticas**
+       - Si se alcanza el número máximo de reenvíos sin obtener interacción del usuario, el sistema marca el ciclo como finalizado por cumplimiento de políticas.
+
+    8. **Consulta de estado**
+       - El cliente puede consultar el estado de las campañas y notificaciones enviadas a través del API de reporte.
+       - El reporte incluye información como:
+         - estado actual de la campaña
+         - estado de cada destinatario
+         - historial de notificaciones enviadas
+         - fecha y resultado de cada intento
 
 servers:
-  production:
-    url: https://tigo.com.co
-    protocol: https
-    description: Servidor productivo
+  - url: https://chattigo.ingeneo.com.co/chattigotrace
+    description: Servidor de producción
+  - url: https://chattigo.ingeneo.com.co/chattigotraceqa
+    description: Servidor laboratorio
 
-channels:
+paths:
+  /api/ArgosHsmScheduleMassive/SaveNotificationSchedule:
+    post:
+      tags:
+        - Programación del HSM
 
-  /api/outbound/colombia/outboundmassive:
-    description: Servicio para programar envíos masivos de notificaciones
-    publish:
-      summary: Programar campaña de notificaciones
-      operationId: scheduleMassiveNotification
-      bindings:
-        http:
-          type: request
-          method: POST
-          headers:
-            type: object
-            properties:
-              x-access-key:
-                type: string
-                example: S7uK238FXIbHdaghd0LuT2ZfdA
-      message:
-        $ref: '#/components/messages/OutboundMassiveRequest'
+      summary: Crear programación de envío de HSM
+      description: |
+        Permite registrar una campaña de envío masivo de notificaciones **HSM** 
+        a través de WhatsApp utilizando las líneas configuradas en Chattigo.
 
-  /api/colombia/getreportnotificationmassive:
-    description: Obtener reporte de campañas y estado de notificaciones
-    subscribe:
-      summary: Consultar estado de campaña
-      operationId: getReportNotificationMassive
-      bindings:
-        http:
-          type: request
-          method: GET
-          headers:
-            type: object
-            properties:
-              x-access-key:
-                type: string
-                example: S7uK238FXIbHdaghd0LuT2ZfdAS
-      message:
-        $ref: '#/components/messages/GetReportNotificationRequest'
+        La campaña se almacenará en el sistema y será procesada automáticamente por el scheduler interno
+        que ejecuta el envío de notificaciones cada **5 minutos**.
+
+        ## Modo de prueba de plantillas
+
+        Si el parámetro `testSend` es **true**:
+
+        - Se envía inmediatamente un HSM de prueba.
+        - No se guarda programación en base de datos.
+        - No se genera traza ni registros de campaña.
+
+        Esto permite validar que:
+
+        - La plantilla existe
+        - Los parámetros son correctos
+        - La línea (DID) está correctamente configurada.
+
+        ## Requisitos
+
+        - API Key válida en el header `x-api-key`
+        - Payload JSON con la estructura requerida.
+
+        ## Validaciones aplicadas
+
+        - Validación de API Key
+        - Validación de estructura del payload
+        - Validación de plantilla HSM
+        - Validación de línea de envío (DID)
+        - Validación de parámetros dinámicos de plantilla
+
+      operationId: saveNotificationSchedule
+
+      parameters:
+
+        - name: x-api-key
+          in: header
+          required: true
+          schema:
+            type: string
+          description: API Key de autenticación para consumir el servicio
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationScheduleRequest"
+
+      responses:
+
+        "200":
+          description: Programación registrada correctamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                    example: 200
+                  message:
+                    type: string
+                    example: saved programming
+
+        "400":
+          description: Error en la estructura del request
+
+        "401":
+          description: API Key inválida
+
+        "500":
+          description: Error interno del servidor
+
+  /api/ArgosHsmScheduleMassive/GetNotificationSchedule:
+    get:
+      tags:
+        - Reporte de estado del HSM
+
+      summary: Consultar estado de HSM delas diferentes campañas
+
+      description: |
+        Permite consultar el estado de campañas de notificaciones HSM programadas
+        y obtener el detalle de cada destinatario y de cada intento de envío.
+
+        ## Requisitos
+
+        - API Key válida en el header `x-api-key`
+
+        ## Información retornada
+
+        El reporte incluye:
+
+        - Información de la campaña
+        - Línea utilizada para el envío
+        - Plantilla HSM utilizada
+        - Políticas de reenvío configuradas
+        - Destinatarios incluidos en la campaña
+        - Estado de cada notificación enviada
+        - Historial de intentos de envío
+
+        ## Estados posibles de notificación
+
+        | Estado | Descripción |
+        |------|-------------|
+        | un_read | El usuario no ha leído el mensaje |
+        | un_response | El usuario no ha respondido |
+        | no_complete | El flujo no se completó |
+        | decline | El usuario rechazó la campaña |
+        | pass_to_agent | El chat fue transferido a un asesor |
+
+        ## Filtros disponibles
+
+        - `campaignId`
+        - `did`
+        - `destination`
+        - `startDate`
+        - `endDate`
+
+      operationId: getNotificationCampaignReport
+
+      parameters:
+
+        - name: campaignId
+          in: query
+          required: true
+          schema:
+            type: string
+
+        - name: startDate
+          in: query
+          required: true
+          schema:
+            type: string
+
+        - name: endDate
+          in: query
+          required: true
+          schema:
+            type: string
+            
+        - name: did
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Línea de envío utilizada
+
+        - name: destination
+          in: query
+          schema:
+            type: string
+          description: Número de destino
+
+
+      responses:
+
+        "200":
+          description: Reporte generado correctamente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationReportResponse"
 
 components:
 
-  messages:
-
-    OutboundMassiveRequest:
-      name: OutboundMassiveRequest
-      title: Programación de campaña masiva
-      payload:
-        type: object
-        properties:
-          campaignId:
-            type: string
-            description: Id de la campaña
-            example: "5865"
-
-          schedulerDate:
-            type: string
-            description: Fecha programada de envío
-            example: "2025-06-20 10:30:00"
-
-          template:
-            type: string
-            description: Nombre de la plantilla
-            example: descuentos
-
-          resendPolicies:
-            $ref: '#/components/schemas/ResendPolicies'
-
-          destinations:
-            type: array
-            items:
-              $ref: '#/components/schemas/Destination'
-
-    GetReportNotificationRequest:
-      name: GetReportNotificationRequest
-      title: Consulta de reporte de notificaciones
-      payload:
-        type: object
-        properties:
-          campaignId:
-            type: string
-            description: Id de la campaña
-            example: "3565"
-
-          startDate:
-            type: string
-            description: Fecha inicio filtro
-            example: "2025-06-01 07:00:00"
-
-          endDate:
-            type: string
-            description: Fecha fin filtro
-            example: "2025-06-30 18:00:00"
-
   schemas:
 
-    ResendPolicies:
+    NotificationScheduleRequest:
+      type: object
+      required:
+        - campaignId
+        - did
+        - nameSpace
+        - template
+        - schedulerDate
+      properties:
+
+        campaignId:
+          type: string
+          description: Indentificador de la campaña
+          example: "787880"
+
+        did:
+          type: string
+          description: Identificador de la línea de WhatsApp
+          example: "57316554986"
+
+        nameSpace:
+          type: string
+          description: Identificador del namespace generado por Chattigo
+          example: "45jkc74e7_7899_4545_8b97_d51123sad3"
+
+        template:
+          type: string
+          example: "campana_zona_norte"
+
+        schedulerDate:
+          type: string
+          example: "2026-03-14T17:26:00"
+
+        testSend:
+          type: boolean
+          description: |
+            Permite enviar un HSM de prueba para validar la plantilla
+            sin guardar programación.
+          example: false
+
+        resendPolicies:
+          $ref: "#/components/schemas/ResendPolicies"
+
+        destinations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Destination"
+
+    NotificationReportResponse:
       type: object
       properties:
+
+        code:
+          type: integer
+          example: 200
+
+        message:
+          type: string
+          example: success
+
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/CampaignReport"
+
+    CampaignReport:
+      type: object
+      properties:
+
+        campaignId:
+          type: string
+          example: "787880"
+
+        did:
+          type: string
+          example: "573149746"
+
+        namespace:
+          type: string
+          example: "1ffc74e183"
+
+        template:
+          type: string
+          example: "campana_zona_norte_qa"
+
+        schedulerDate:
+          type: string
+          example: "2026-03-14T17:26:00"
+
         frecuencyResends:
           type: integer
-          description: Máximo de reenvíos por destinatario
           example: 3
 
         periodResends:
           type: integer
-          description: Intervalo de reenvío en horas
-          example: 48
+          example: 24
 
         response:
           type: array
-          description: Estados que activan reenvío
           items:
             type: string
-            enum:
-              - un_read
-              - un_response
-              - no_complete
+
+        createdAt:
+          type: string
+          example: "2026-03-14T17:24:53.603"
+
+        destinations:
+          type: array
+          items:
+            $ref: "#/components/schemas/DestinationReport"
 
     Destination:
       type: object
@@ -134,45 +359,101 @@ components:
 
         destination:
           type: string
-          description: Celular del destinatario con indicativo
-          example: "57304544553"
+          example: "573436153"
 
         clientIdentification:
           type: string
-          description: Documento del cliente
           example: "73557001"
 
         clientCode:
           type: string
-          description: Código del cliente
           example: "0001001832"
-
-        addresCode:
-          type: string
-          description: Código de dirección
-          example: "0002300479"
 
         email:
           type: string
-          description: Correo de notificación
-          example: test@gmail.com
+          example: "test@gmail.com"
 
         products:
           type: array
           items:
-            $ref: '#/components/schemas/Product'
+            $ref: "#/components/schemas/Product"
 
-        parameters:
+    DestinationReport:
+      type: object
+      properties:
+
+        destination:
+          type: string
+          example: "573436153"
+
+        clientIdentification:
+          type: string
+          example: "73557001"
+
+        clientCode:
+          type: string
+          example: "0001001832"
+
+        email:
+          type: string
+          example: "zjalex0@pngzero.com"
+
+        complete:
+          type: boolean
+          example: false
+
+        products:
           type: array
           items:
-            type: string
-          example:
-            - "blanco 42 Kilos"
-            - "9%"
+            $ref: "#/components/schemas/Product"
+
+        details:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationDetail"
+
+    NotificationDetail:
+      type: object
+      properties:
+
+        hsmId:
+          type: string
+          example: "20260314172533104"
+
+        hsmStatus:
+          type: string
+          example: "un_read"
+
+        chatId:
+          type: string
+          nullable: true
+
+        chatStatus:
+          type: string
+          nullable: true
+
+        declineReason:
+          type: string
+          nullable: true
+
+        notificationStatus:
+          type: string
+          example: "Sended"
+
+        notificationResponse:
+          type: string
+          example: "{\"success\":true}"
+
+        createdAt:
+          type: string
+
+        updatedAt:
+          type: string
 
     Product:
       type: object
       properties:
+
         productCode:
           type: string
           example: "4618089"
@@ -180,3 +461,24 @@ components:
         ammount:
           type: integer
           example: 8
+
+    ResendPolicies:
+      type: object
+      properties:
+
+        frecuencyResends:
+          type: integer
+          example: 3
+
+        periodResends:
+          type: integer
+          example: 24
+
+        response:
+          type: array
+          items:
+            type: string
+            enum:
+              - un_read
+              - un_response
+              - no_complete
